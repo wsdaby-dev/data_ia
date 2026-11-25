@@ -58,7 +58,7 @@ button{cursor:pointer}
 .doc input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px;flex:none}
 .doc .name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px;font-weight:500;background:none;border:0;padding:0;text-align:left}
 .doc .meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin:3px 0 0 24px}
-.doc .acts{display:flex;gap:6px;margin:6px 0 0 24px}
+.doc .acts{display:flex;gap:6px;margin:6px 0 0 24px;flex-wrap:wrap}
 .mini{font-size:12px;border:1px solid var(--line);background:var(--panel);border-radius:4px;padding:2px 8px}
 .mini:hover{border-color:var(--accent);color:var(--accent)}
 .bar{height:3px;background:var(--line);border-radius:2px;margin:6px 0 0 24px;overflow:hidden}
@@ -78,8 +78,8 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
 
 /* Chat */
 #main{display:flex;flex-direction:column;min-height:0;min-width:0}
-#topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
-#topbar .scope{font-size:13px;color:var(--muted)}
+#topbar{display:flex;justify-content:space-between;align-items:center;padding:10px 20px;border-bottom:1px solid var(--line);background:var(--panel);gap:10px}
+#topbar .scope{font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 #chat{flex:1;overflow-y:auto;padding:24px 20px;display:flex;flex-direction:column;gap:18px}
 .msg{max-width:780px;width:100%;margin:0 auto}
 .msg .who{font-size:12px;color:var(--muted);margin-bottom:3px}
@@ -144,16 +144,6 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
 .conv .x:hover{color:var(--bad)}
 .opt{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--muted);margin-top:10px}
 .opt input{accent-color:var(--accent)}
-.ctx{margin-top:10px;font-size:13px;color:var(--muted)}
-.ctx summary{cursor:pointer}
-.ctx pre{white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto;background:var(--paper);border:1px solid var(--line);border-radius:5px;padding:8px;font-family:var(--mono);font-size:12px;color:var(--ink);margin:6px 0}
-.keys{margin-top:12px;border:1px solid var(--line);border-radius:6px;overflow:hidden}
-.keys .kt{font-size:12px;color:var(--muted);padding:5px 10px;background:var(--paper);border-bottom:1px solid var(--line)}
-.key{display:flex;gap:10px;width:100%;text-align:left;background:none;border:0;border-bottom:1px solid var(--line);padding:6px 10px;font-size:13px}
-.key:last-child{border-bottom:0}
-.key:hover{background:var(--grid)}
-.key .kp{font-family:var(--mono);font-size:12px;color:var(--accent);flex:none}
-.key .kl{font-family:var(--mono);font-size:12px;word-break:break-word;white-space:pre-wrap}
 #vnote{display:none;padding:6px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line)}
 </style>
 </head>
@@ -199,7 +189,7 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
         <datalist id="oModels"><option value="qwen2.5:3b"><option value="qwen2.5:7b"><option value="llama3.1:8b"><option value="llama3.2:3b"><option value="mistral:7b"></datalist>
         <div style="margin-top:8px"><button class="btn ghost" id="oTest" type="button">Tester la connexion</button></div>
         <div class="status" id="oStatus"></div>
-        <p class="hint">En local : double-clique sur <code>Lancer-DatasheetAI.bat</code>. Depuis GitHub Pages : lance une fois <code>Autoriser-GitHub.bat</code>.</p>
+        <p class="hint">En local : lance Ollama (<code>ollama serve</code>). Depuis un autre domaine/GitHub Pages : configure <code>OLLAMA_ORIGINS=*</code>.</p>
       </div>
 
       <div id="pWeb" hidden>
@@ -257,63 +247,58 @@ label.f{display:block;font-size:13px;color:var(--muted);margin:8px 0 3px}
 </div>
 
 <script type="module">
-/* ============================================================
-   DatasheetAI – RAG 100 % navigateur
-   - Extraction : pdf.js (texte + tableaux) et OCR Tesseract.js pour les scans
-   - Sauvegarde : IndexedDB (documents et conversations restent dans le navigateur)
-   - Recherche  : BM25 (lexicale, idéale pour les références de composants)
-   - LLM        : Ollama (local) ou WebLLM (WebGPU, dans le navigateur)
-   ============================================================ */
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
 
 const $ = (id) => document.getElementById(id);
-const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
 const SYSTEM_PROMPT = `Tu es un assistant expert en lecture de datasheets techniques (électronique, capteurs, microcontrôleurs, composants).
 Les extraits du CONTEXTE sont souvent en anglais alors que la question est souvent en français : fais le lien entre les deux.
 Vocabulaire utile : Supply voltage / VCC / VS = tension d'alimentation ; Absolute Maximum Ratings = valeurs maximales absolues (à ne jamais dépasser) ; Recommended Operating Conditions = conditions de fonctionnement recommandées ; Quiescent current = courant de repos ; Output current = courant de sortie ; MIN / TYP / MAX = minimum / typique / maximum ; Operating temperature = température de fonctionnement ; Package = boîtier ; Pin = broche.
 Règles strictes :
-1. Réponds UNIQUEMENT à partir du CONTEXTE. Les LIGNES CLÉS placées au début contiennent souvent la réponse exacte : lis-les en premier.
-2. Si une valeur demandée apparaît dans les extraits, donne-la, même si elle se trouve dans un tableau. Réponds « Je ne trouve pas cette information dans les documents. » seulement si AUCUN extrait ne traite du sujet.
-3. N'invente JAMAIS de valeur numérique.
-4. Lis les tableaux ligne par ligne : les colonnes sont séparées par " | " et l'en-tête (MIN | MAX | UNIT) se trouve quelques lignes plus haut. Précise toujours l'unité, les conditions de test et la colonne Min / Typ / Max.
-5. Pour une valeur « maximale », donne celle des Absolute Maximum Ratings (limite à ne pas dépasser) ET celle des Recommended Operating Conditions si elles sont présentes, en les distinguant clairement.
-6. Cite tes sources avec le numéro de l'extrait entre crochets, par exemple [2].
-7. Réponds dans la langue de l'utilisateur (français par défaut), de façon concise.`;
+1. Réponds UNIQUEMENT à partir du CONTEXTE fourni.
+2. Si une valeur demandée apparaît dans les extraits, donne-la, même si elle se trouve dans un tableau. Réponds « Je ne trouve pas cette information dans les documents. » uniquement si AUCUN extrait ne contient l'information.
+3. N'invente JAMAIS de valeur numérique ou de caractéristique absente des extraits.
+4. Lis les tableaux ligne par ligne : les colonnes sont séparées par " | ". Précise toujours l'unité, les conditions de test et Min / Typ / Max quand ils figurent dans l'extrait.
+5. Pour une valeur « maximale », distingue clairement Absolute Maximum Ratings (limite à ne pas dépasser) et Recommended Operating Conditions si les deux sont présents.
+6. Cite tes sources avec le numéro de l'extrait entre crochets, par exemple [1].
+7. Réponds dans la langue de l'utilisateur (français par défaut), de façon claire et concise.`;
 
 const GENERAL_PROMPT = `Tu es un assistant expert en électronique, composants, capteurs, microcontrôleurs et lecture de datasheets.
-Aucun document n'a été fourni : réponds avec tes connaissances générales, de façon claire, concise et structurée.
+Aucun document n'est sélectionné : réponds avec tes connaissances générales, de façon claire, concise et structurée.
 Si tu donnes des valeurs numériques précises propres à un composant (tension max, courant, brochage…), rappelle brièvement qu'elles doivent être vérifiées dans la datasheet officielle, et que l'utilisateur peut déposer le PDF pour une réponse sourcée.
 Si tu ne sais pas, dis-le plutôt que d'inventer. Réponds dans la langue de l'utilisateur (français par défaut).`;
 
-const COMPARE_PROMPT = `\nMODE COMPARAISON : présente la réponse sous forme de tableau Markdown, une colonne par document/composant, une seule ligne par caractéristique.
-Ne répète JAMAIS une ligne : si une valeur apparaît plusieurs fois dans les extraits, ne la garde qu'une fois. Regroupe Min / Typ / Max dans la même cellule (ex. « 3 / 5 / 7 V ») au lieu de faire une ligne par colonne.
-Si une valeur dépend du boîtier ou d'une condition de test, précise-le dans la cellule. N'ajoute aucune ligne absente des extraits ; indique "n/d" si l'information manque.`;
+const COMPARE_PROMPT = `
+MODE COMPARAISON :
+- Présente la réponse sous forme d'un tableau Markdown : une colonne « Caractéristique » puis une colonne par document/composant comparé.
+- Une SEULE ligne par caractéristique : ne répète JAMAIS la même caractéristique sur deux lignes.
+- Regroupe Min / Typ / Max dans la même cellule si besoin (ex. « 4 V min / 30 V max »).
+- Si une caractéristique ou une valeur n'apparaît pas dans les extraits d'un document, écris « n/d » : n'invente rien et n'ajoute pas de lignes absentes des extraits.
+- Ajoute la référence d'extrait [n] quand c'est pertinent.`;
 
 const SUMMARY_QUESTION = `Fais une fiche résumé de ce composant sous forme de liste : référence, fabricant, description, tension d'alimentation, courant (typique et max), plage de température, boîtier, brochage (pins principales), applications.`;
 
-/* ---------- État ---------- */
 const state = {
-  docs: [],      // {id,name,kind,blob,pdf,pages,chunkData,ocr,selected,status,...}
-  chunks: [],    // {id,docId,file,page,heading,text,tf,len}
-  idx: null,     // index BM25
-  history: [],   // historique envoyé au LLM (celui de la conversation active)
-  conv: null,    // conversation active
-  convs: [],     // toutes les conversations
+  docs: [],
+  chunks: [],
+  idx: null,
+  convs: [],
+  activeConvId: null,
   engine: "ollama",
-  web: null,     // moteur WebLLM
+  web: null,
   webModel: null,
   busy: false,
-  ollamaBase: null,
   abort: null,
+  viewer: { docId: null, page: 1, totalPages: 1 },
 };
-const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 
-/* ---------- Réglages persistants (petites valeurs) ---------- */
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 const store = {
   get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
   set(k, v) { try { localStorage.setItem(k, v); } catch {} },
 };
+
 $("oUrl").value = store.get("oUrl", "http://127.0.0.1:11434");
 $("oModel").value = store.get("oModel", "qwen2.5:3b");
 $("wModel").value = store.get("wModel", $("wModel").value);
@@ -321,7 +306,7 @@ $("ocrOn").checked = store.get("ocrOn", "1") === "1";
 $("ocrLang").value = store.get("ocrLang", "eng");
 if (store.get("theme")) document.documentElement.dataset.theme = store.get("theme");
 
-/* ---------- Sauvegarde des documents et conversations (IndexedDB) ---------- */
+/* ---------- IndexedDB ---------- */
 const idb = {
   db: null,
   open() {
@@ -355,29 +340,33 @@ const idb = {
 };
 
 const slimDoc = (d) => ({
-  id: d.id, name: d.name, kind: d.kind, pages: d.pages, status: d.status, warn: !!d.warn,
-  chunkData: d.chunkData, blob: d.blob || null, ocr: d.ocr || {}, ocrPages: d.ocrPages || 0, addedAt: d.addedAt,
+  id: d.id, name: d.name, kind: d.kind, pages: d.pages, status: d.status,
+  chunkData: d.chunkData || [], blob: d.blob || null, ocr: d.ocr || {},
+  ocrPages: d.ocrPages || 0, addedAt: d.addedAt,
 });
+
 async function persistDoc(d) {
   if (!idb.db) return;
-  const r = await idb.put("docs", slimDoc(d));
-  d.saveFail = r === null;
+  await idb.put("docs", slimDoc(d));
 }
+
 function saveSelection() {
   store.set("unsel", JSON.stringify(state.docs.filter((d) => !d.selected).map((d) => d.id)));
 }
 
-/* ============================================================
-   1. INGESTION (texte, tableaux, OCR)
-   ============================================================ */
+function getSelectedUnselSet() {
+  try { return new Set(JSON.parse(store.get("unsel", "[]"))); } catch { return new Set(); }
+}
+
+/* ---------- Extraction texte / tableaux / OCR ---------- */
 function buildRows(items) {
   const rows = [];
   for (const it of items) {
     if (!it.str || !it.str.trim()) continue;
     const x = it.transform[4], y = it.transform[5];
-    let row = rows.find((r) => Math.abs(r.y - y) < 3);
+    let row = rows.find((r) => Math.abs(r.y - y) < 2.5);
     if (!row) { row = { y, cells: [] }; rows.push(row); }
-    row.cells.push({ x, w: it.width, s: it.str, it });
+    row.cells.push({ x, w: it.width || 0, s: it.str.trim() });
   }
   rows.sort((a, b) => b.y - a.y);
   for (const r of rows) {
@@ -386,53 +375,66 @@ function buildRows(items) {
     for (const c of r.cells) {
       if (prevEnd !== null) {
         const gap = c.x - prevEnd;
-        out += gap > 12 ? " | " : gap > 1 ? " " : "";
+        out += gap > 12 ? " | " : gap > 1.5 ? " " : "";
       }
       out += c.s;
       prevEnd = c.x + c.w;
     }
-    r.text = out.trim();
+    r.text = out.replace(/\s*\|\s*/g, " | ").trim();
   }
   return rows.filter((r) => r.text);
 }
+
 const pageToText = (items) => buildRows(items).map((r) => r.text).join("\n");
 
-const HEADING_RE = /^(\d+(\.\d+)*\.?\s+[A-ZÀ-Ý][^|]{2,60}|[A-Z][A-Z0-9 \-/&,()]{5,60})$/;
+const HEADING_RE = /^(\d+(\.\d+)*\.?\s+[A-ZÀ-Ý][^|]{2,60}|[A-Z][A-Z0-9 \-/&,()]{4,60})$/;
 
 function chunkPage(text, maxLen = 1200) {
-  const lines = text.split("\n");
+  const lines = String(text || "").split("\n");
   const out = [];
-  let heading = "", buf = [], len = 0, bufHeading = "", bufHeads = [];
+  let heading = "", buf = [], len = 0, bufHeading = "";
   const flush = () => {
-    if (buf.length) out.push({ heading: bufHeads.length ? bufHeads.slice(-2).join(" › ") : bufHeading, text: buf.join("\n") });
+    if (buf.length) {
+      out.push({ heading: bufHeading, text: buf.join("\n") });
+    }
     const keep = buf.slice(-2);
     buf = keep.length && len > maxLen ? keep : [];
     len = buf.reduce((n, l) => n + l.length + 1, 0);
-    bufHeading = heading; bufHeads = [];
+    bufHeading = heading;
   };
   for (const line of lines) {
-    if (HEADING_RE.test(line.trim()) && !line.includes("|")) { heading = line.trim(); bufHeads.push(heading); }
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (HEADING_RE.test(trimmed) && !trimmed.includes("|")) {
+      heading = trimmed;
+    }
     if (!buf.length) bufHeading = heading;
-    buf.push(line); len += line.length + 1;
-    if (len >= maxLen) flush();
+    // Ne coupe pas au milieu d'une ligne de tableau sauf si le tampon dépasse largement maxLen
+    if (len + trimmed.length + 1 > maxLen && buf.length && (!trimmed.includes("|") || len > maxLen * 1.4)) {
+      flush();
+    }
+    buf.push(trimmed);
+    len += trimmed.length + 1;
   }
-  if (buf.length) out.push({ heading: bufHeads.length ? bufHeads.slice(-2).join(" › ") : bufHeading, text: buf.join("\n") });
+  if (buf.length) out.push({ heading: bufHeading, text: buf.join("\n") });
   return out;
 }
 
-/* ---------- OCR (Tesseract.js, chargé seulement si besoin) ---------- */
 const OCR_MAX_PAGES = 60;
 const OCR_SCALE = 3;
 const ocr = { worker: null, lang: null, queue: Promise.resolve(), onProgress: null };
 
 function loadScript(src) {
   return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) return resolve();
     const el = document.createElement("script");
-    el.src = src; el.onload = resolve;
+    el.src = src;
+    el.onload = resolve;
     el.onerror = () => reject(new Error("Impossible de charger l'OCR (connexion Internet requise la première fois)."));
     document.head.appendChild(el);
   });
 }
+
 async function getOcrWorker(lang) {
   if (!window.Tesseract) await loadScript("https://cdn.jsdelivr.net/npm/tesseract.js@5.1.1/dist/tesseract.min.js");
   if (ocr.worker && ocr.lang === lang) return ocr.worker;
@@ -441,6 +443,7 @@ async function getOcrWorker(lang) {
   ocr.lang = lang;
   return ocr.worker;
 }
+
 function ocrCanvas(canvas, lang) {
   const job = ocr.queue.then(async () => {
     const worker = await getOcrWorker(lang);
@@ -451,8 +454,8 @@ function ocrCanvas(canvas, lang) {
     }
     return {
       w: canvas.width, h: canvas.height,
-      lines: lines
-        .map((l) => ({ t: (l.text || "").replace(/\s+/g, " ").trim(), x0: l.bbox.x0, y0: l.bbox.y0, x1: l.bbox.x1, y1: l.bbox.y1 }))
+      lines: (lines || [])
+        .map((l) => ({ t: (l.text || "").replace(/\s+/g, " ").trim(), x0: l.bbox?.x0 || 0, y0: l.bbox?.y0 || 0, x1: l.bbox?.x1 || 0, y1: l.bbox?.y1 || 0 }))
         .filter((l) => l.t),
     };
   });
@@ -460,7 +463,6 @@ function ocrCanvas(canvas, lang) {
   return job;
 }
 
-/* ---------- Documents ---------- */
 function getPdf(doc) {
   if (!doc.pdfP) {
     doc.pdfP = (async () => {
@@ -473,17 +475,17 @@ function getPdf(doc) {
 }
 
 const newDoc = (name) => ({
-  id: uid(), name, kind: "text", blob: null, pdf: null, pages: 0, chunkData: [], ocr: {}, ocrPages: 0,
-  selected: true, status: "En attente…", progress: 0, chunks: 0, addedAt: Date.now(),
+  id: uid(), name, kind: "text", blob: null, pdf: null, pages: 0,
+  chunkData: [], ocr: {}, ocrPages: 0, selected: true,
+  status: "En attente…", progress: 0, chunks: 0, addedAt: Date.now(),
 });
 
-/* Lignes qui se répètent sur beaucoup de pages (en-têtes, pieds de page) : inutiles pour l'IA */
 function computeBoiler(chunkData, pages) {
   const pagesOf = new Map();
   for (const c of chunkData) {
     for (const l of c.text.split("\n")) {
       const k = l.trim().replace(/\d+/g, "#");
-      if (k.length < 3 || /\b(MIN|TYP|MAX|UNIT)\b/.test(l)) continue;   // on garde les en-têtes de tableaux
+      if (k.length < 3 || /\b(MIN|TYP|MAX|UNIT)\b/i.test(l)) continue;
       if (!pagesOf.has(k)) pagesOf.set(k, new Set());
       pagesOf.get(k).add(c.page);
     }
@@ -494,50 +496,34 @@ function computeBoiler(chunkData, pages) {
   return set;
 }
 
-const isHeaderLine = (l) => l.includes("|") && l.length < 90 && /\b(MIN|TYP|MAX)\b/.test(l);
-const isTocLine = (l) => /\.{4,}/.test(l);   // ligne de sommaire (points de conduite)
-
-const secCache = new Map();
-const secToks = (sec) => {
-  if (!secCache.has(sec)) secCache.set(sec, new Set(tokenize(sec || "")));
-  return secCache.get(sec);
-};
-
-/* Découpe un extrait en lignes annotées : section courante, en-tête de tableau, type de ligne */
-function parseRows(ctx, section0, header0) {
-  let section = section0 || "", header = header0 || "";
-  const rows = [];
-  for (const raw of ctx.split("\n")) {
-    const text = raw.trim();
-    if (!text) continue;
-    const isHead = HEADING_RE.test(text) && !text.includes("|");
-    if (isHead) section = text;
-    const isHdr = isHeaderLine(text);
-    if (isHdr) header = text;
-    const kind = isHead ? "head" : isHdr ? "hdr" : /^\(\d+\)/.test(text) || text.startsWith("[colonnes") ? "note" : "data";
-    rows.push({ text, toks: new Set(tokenize(text)), section, header, kind });
-  }
-  return rows;
-}
+const isHeaderLine = (l) => l.includes("|") && l.length < 110 && /\b(MIN|TYP|MAX)\b/i.test(l);
+const isTocLine = (l) => /\.{4,}/.test(l);
 
 function addChunks(doc) {
   doc.chunks = 0;
   const isPdf = doc.kind === "pdf";
   const boiler = isPdf ? computeBoiler(doc.chunkData, doc.pages || 1) : new Set();
-  const lastHdr = new Map();   // dernière ligne d'en-tête (MIN | TYP | MAX) vue sur chaque page
+  const lastHdr = new Map();
   for (const c of doc.chunkData) {
     const hdr0 = lastHdr.get(c.page) || "";
     const lines = c.text.split("\n");
     for (const l of lines) if (isHeaderLine(l.trim())) lastHdr.set(c.page, l.trim());
-    // en-têtes/pieds de page répétés et lignes de sommaire : inutiles pour l'IA
-    const useful = isPdf ? lines.filter((l) => !boiler.has(l.trim().replace(/\d+/g, "#")) && !isTocLine(l)) : lines;
-    let ctx = useful.join("\n");
-    if (ctx.trim().length < 20) continue;
-    // un extrait qui commence au milieu d'un tableau perd son en-tête : on le rappelle
-    if (hdr0 && !useful.slice(0, 4).some((l) => isHeaderLine(l.trim()))) ctx = "[colonnes du tableau en cours : " + hdr0 + "]\n" + ctx;
+    const useful = isPdf
+      ? lines.filter((l) => !boiler.has(l.trim().replace(/\d+/g, "#")) && !isTocLine(l))
+      : lines;
+    let ctx = useful.join("\n").trim();
+    if (ctx.length < 15) continue;
+    if (hdr0 && !useful.slice(0, 4).some((l) => isHeaderLine(l.trim()))) {
+      ctx = `[colonnes du tableau en cours : ${hdr0}]\n` + ctx;
+    }
     state.chunks.push({
-      id: state.chunks.length, docId: doc.id, file: doc.name, page: c.page, heading: c.heading,
-      text: c.text, ctx, rows: parseRows(ctx, c.heading, hdr0),
+      id: state.chunks.length,
+      docId: doc.id,
+      file: doc.name,
+      page: c.page,
+      heading: c.heading || "",
+      text: c.text,
+      ctx,
     });
     doc.chunks++;
   }
@@ -562,22 +548,27 @@ async function ocrPdfPage(pdf, p, lang) {
   const page = await pdf.getPage(p);
   const vp = page.getViewport({ scale: OCR_SCALE });
   const cv = document.createElement("canvas");
-  cv.width = Math.round(vp.width); cv.height = Math.round(vp.height);
+  cv.width = Math.round(vp.width);
+  cv.height = Math.round(vp.height);
   await page.render({ canvasContext: cv.getContext("2d"), viewport: vp }).promise;
   return ocrCanvas(cv, lang);
 }
 
 async function ingestOne(file, doc) {
   try {
-    doc.status = "Lecture…"; renderDocs();
+    doc.status = "Lecture…";
+    renderDocs();
     const isPdf = file.type === "application/pdf" || /\.pdf$/i.test(file.name);
     const isImg = file.type.startsWith("image/") || /\.(png|jpe?g|webp|bmp)$/i.test(file.name);
-    const useOcr = $("ocrOn").checked, lang = $("ocrLang").value;
+    const useOcr = $("ocrOn").checked;
+    const lang = $("ocrLang").value;
     const pageTexts = [];
-    doc.ocr = {}; doc.ocrPages = 0; doc.ocrSkipped = 0;
+    doc.ocr = {};
+    doc.ocrPages = 0;
 
     if (isPdf) {
-      doc.kind = "pdf"; doc.blob = file;
+      doc.kind = "pdf";
+      doc.blob = file;
       const pdf = await getPdf(doc);
       doc.pages = pdf.numPages;
       const needOcr = [];
@@ -592,932 +583,221 @@ async function ingestOne(file, doc) {
       }
       if (useOcr && needOcr.length) {
         const todo = needOcr.slice(0, OCR_MAX_PAGES);
-        doc.ocrSkipped = needOcr.length - todo.length;
         for (let i = 0; i < todo.length; i++) {
           const p = todo[i];
           doc._ocrBase = `OCR page ${p} (${i + 1}/${todo.length})`;
-          doc.status = doc._ocrBase + "…"; doc.progress = i / todo.length; renderDocsSoon();
+          doc.status = doc._ocrBase + "…";
+          doc.progress = i / todo.length;
+          renderDocsSoon();
           ocr.onProgress = (m) => {
             if (m.status === "recognizing text") doc.status = `${doc._ocrBase} · ${Math.round(m.progress * 100)} %`;
-            else if (/load|init/i.test(m.status || "")) doc.status = "OCR : chargement du moteur (première fois seulement)…";
+            else if (/load|init/i.test(m.status || "")) doc.status = "OCR : chargement du moteur…";
             renderDocsSoon();
           };
           const res = await ocrPdfPage(pdf, p, lang);
-          doc.ocr[p] = res; doc.ocrPages++;
+          doc.ocr[p] = res;
+          doc.ocrPages++;
           pageTexts[p - 1] = res.lines.map((l) => l.t).join("\n");
         }
       }
     } else if (isImg) {
-      doc.kind = "image"; doc.blob = file; doc.pages = 1;
+      doc.kind = "image";
+      doc.blob = file;
+      doc.pages = 1;
       if (useOcr) {
+        doc.status = "OCR image…";
+        doc.progress = 0.5;
+        renderDocs();
         const bmp = await createImageBitmap(file);
-        const mx = Math.max(bmp.width, bmp.height);
-        const ratio = mx > 3000 ? 3000 / mx : mx < 1500 ? Math.min(3, 1500 / mx) : 1;
         const cv = document.createElement("canvas");
-        cv.width = Math.round(bmp.width * ratio); cv.height = Math.round(bmp.height * ratio);
+        const scale = Math.min(2.5, Math.max(1, 1800 / Math.max(bmp.width || 1, bmp.height || 1)));
+        cv.width = Math.round((bmp.width || 800) * scale);
+        cv.height = Math.round((bmp.height || 600) * scale);
         cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height);
-        doc._ocrBase = "OCR de l'image";
+        bmp.close?.();
         ocr.onProgress = (m) => {
-          if (m.status === "recognizing text") doc.status = `${doc._ocrBase} · ${Math.round(m.progress * 100)} %`;
-          else if (/load|init/i.test(m.status || "")) doc.status = "OCR : chargement du moteur (première fois seulement)…";
+          if (m.status === "recognizing text") doc.status = `OCR image · ${Math.round(m.progress * 100)} %`;
           renderDocsSoon();
         };
         const res = await ocrCanvas(cv, lang);
-        doc.ocr[1] = res; doc.ocrPages = 1;
+        doc.ocr[1] = res;
+        doc.ocrPages = 1;
         pageTexts.push(res.lines.map((l) => l.t).join("\n"));
       } else {
         pageTexts.push("");
       }
     } else {
-      const txt = await file.text();
-      (txt.match(/[\s\S]{1,3500}/g) || []).forEach((t) => pageTexts.push(t));
-      doc.pages = pageTexts.length;
+      doc.kind = "text";
+      doc.pages = 1;
+      const raw = await file.text();
+      pageTexts.push(raw);
     }
 
-    doc.chunkData = [];
-    pageTexts.forEach((t, i) => {
-      for (const c of chunkPage(t)) {
-        if (c.text.trim().length >= 20) doc.chunkData.push({ page: i + 1, heading: c.heading, text: c.text });
+    const chunkData = [];
+    pageTexts.forEach((txt, idx) => {
+      const pageNum = idx + 1;
+      for (const part of chunkPage(txt)) {
+        chunkData.push({ page: pageNum, heading: part.heading, text: part.text });
       }
     });
-    addChunks(doc);
 
-    const totalChars = pageTexts.reduce((n, t) => n + t.length, 0);
-    const low = totalChars < 50 * Math.max(doc.pages, 1);
-    if (low) {
-      doc.status = useOcr ? "Peu de texte reconnu dans ce document" : "Peu de texte : scan ? Active l'OCR puis redépose-le";
-      doc.warn = true;
-    } else {
-      doc.status = doc.ocrPages ? `Prêt (OCR sur ${doc.ocrPages} page${doc.ocrPages > 1 ? "s" : ""})` : "Prêt";
-      doc.warn = false;
-    }
-    if (doc.ocrSkipped) doc.status += ` · ${doc.ocrSkipped} pages sans OCR (limite ${OCR_MAX_PAGES})`;
+    doc.chunkData = chunkData;
     doc.progress = 1;
+    doc.status = chunkData.length ? "Indexé" : "Aucun texte extrait";
+    rebuildIndex();
     await persistDoc(doc);
-  } catch (e) {
-    console.error(e);
-    doc.status = "Erreur de lecture : " + (e.message || e);
-    doc.warn = true;
-    doc.progress = 1;
+    renderDocs();
+    updateScope();
+    renderChat();
+  } catch (err) {
+    doc.status = `Erreur : ${err.message || err}`;
+    doc.progress = 0;
+    renderDocs();
   }
-  buildIndex();
-  renderDocs();
 }
 
-function removeDoc(id) {
-  const d = state.docs.find((x) => x.id === id);
-  if (d?.pdf?.destroy) d.pdf.destroy();
-  if (viewer.docId === id) $("app").classList.remove("viewer-open");
-  state.docs = state.docs.filter((x) => x.id !== id);
-  state.chunks = state.chunks.filter((c) => c.docId !== id);
-  state.chunks.forEach((c, i) => (c.id = i));
-  idb.del("docs", id);
-  saveSelection();
-  buildIndex(); renderDocs();
+/* ---------- Indexation et recherche BM25 ---------- */
+const STOP_FR = new Set([
+  "le","la","les","de","des","du","un","une","et","ou","en","au","aux","pour","par","sur","dans","avec",
+  "est","sont","être","avoir","qui","que","quoi","dont","où","quel","quelle","quels","quelles","ce","cet","cette",
+  "ces","mon","ma","mes","ton","ta","tes","son","sa","ses","notre","votre","leur","leurs","plus","moins","pas","ne",
+  "the","and","or","of","to","in","for","on","with","is","are","be","from","by","at","an","as","it","this","that"
+]);
+
+function tokenize(str) {
+  return String(str || "")
+    .toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^a-z0-9._-]+/g, " ")
+    .split(/\s+/)
+    .map((t) => t.replace(/^[._-]+|[._-]+$/g, ""))
+    .filter((t) => t.length >= 2 && !STOP_FR.has(t));
 }
 
-async function restore() {
-  const ok = await idb.open();
-  if (!ok) { $("persistNote").textContent = "Sauvegarde indisponible dans ce navigateur : tes documents seront perdus à la fermeture."; return; }
-  try { navigator.storage?.persist?.(); } catch {}
-  let unsel = new Set();
-  try { unsel = new Set(JSON.parse(store.get("unsel", "[]"))); } catch {}
-  const docs = (await idb.all("docs")).sort((a, b) => (a.addedAt || 0) - (b.addedAt || 0));
-  for (const r of docs) {
-    const d = { ...r, pdf: null, selected: !unsel.has(r.id), progress: 1, chunks: 0 };
-    addChunks(d);
-    state.docs.push(d);
+function rebuildIndex() {
+  state.chunks = [];
+  for (const d of state.docs) {
+    if (d.chunkData?.length) addChunks(d);
   }
-  buildIndex(); renderDocs();
-  state.convs = await idb.all("chats");
-  const last = store.get("lastConv", "");
-  const c = state.convs.find((x) => x.id === last);
-  if (c) openConv(c.id); else renderConvs();
+  const df = new Map();
+  const docs = state.chunks.map((c) => {
+    const tokens = tokenize(`${c.file} ${c.heading} ${c.ctx}`);
+    const tf = new Map();
+    for (const t of tokens) tf.set(t, (tf.get(t) || 0) + 1);
+    for (const term of tf.keys()) df.set(term, (df.get(term) || 0) + 1);
+    return { chunk: c, tf, len: tokens.length };
+  });
+  const avgLen = docs.length ? docs.reduce((s, d) => s + d.len, 0) / docs.length : 1;
+  state.idx = { docs, df, N: docs.length, avgLen };
 }
 
-/* ============================================================
-   2. RECHERCHE BM25
-   ============================================================ */
-const STOP = new Set("le la les un une des de du d l et ou en au aux a à est sont que qui quoi quel quelle quels quelles pour par sur dans avec sans ce cet cette ces se sa son ses ne pas plus the of and or to in is are what which for on with a an this that it as by be at from how".split(" "));
+function expandQuery(q) {
+  const base = tokenize(q);
+  const exp = new Set(base);
+  const low = q.toLowerCase();
+  const map = [
+    [["tension", "alim", "alimentation", "supply", "vcc", "vs", "max", "maximale"], ["supply", "voltage", "vcc", "vs", "operating", "maximum", "rating"]],
+    [["courant", "current", "consommation", "repos", "quiescent", "sortie", "output"], ["current", "quiescent", "supply", "output", "ma", "ua", "na"]],
+    [["temperature", "température", "thermique", "operating"], ["temperature", "operating", "ambient", "storage", "junction", "max", "min"]],
+    [["broche", "brochage", "pin", "pinout", "boitier", "boîtier", "package"], ["pin", "pinout", "package", "soic", "pdip", "qfn", "dip"]],
+  ];
+  for (const [keys, add] of map) {
+    if (keys.some((k) => low.includes(k))) add.forEach((w) => exp.add(w));
+  }
+  return [...exp];
+}
 
-const FR_EN = {
-  tension: "voltage", alimentation: "supply power vcc", courant: "current", brochage: "pinout pin", broche: "pin", broches: "pins",
-  boitier: "package", temperature: "temperature", frequence: "frequency", puissance: "power", sortie: "output", entree: "input",
-  resistance: "resistance", maximale: "maximum max absolute ratings", maximum: "maximum max absolute ratings", minimale: "minimum min", minimum: "minimum min",
-  typique: "typical typ", absolu: "absolute", absolue: "absolute", caracteristiques: "characteristics", electriques: "electrical",
-  consommation: "consumption quiescent", horloge: "clock", memoire: "memory", vitesse: "speed", gain: "gain", bruit: "noise",
-  seuil: "threshold", retard: "delay", dimensions: "dimensions package", applications: "applications", description: "description features",
-  fonctionnement: "operating conditions recommended", stockage: "storage", capacite: "capacitance", tolerance: "tolerance accuracy", precision: "accuracy",
-  deux: "", comparer: "compare", difference: "difference",
-  repos: "quiescent standby", veille: "standby sleep shutdown", plage: "range", gamme: "range", thermique: "thermal",
-  dissipation: "dissipation power", montage: "application circuit", schema: "circuit diagram", condensateur: "capacitor",
-  decouplage: "decoupling bypass", sensibilite: "sensitivity gain", linearite: "linearity nonlinearity", erreur: "error accuracy",
-  impedance: "impedance", bande: "bandwidth", passante: "bandwidth", temps: "time", duree: "time", reponse: "response",
-  demarrage: "startup start-up", electrostatique: "electrostatic esd", soudure: "solder soldering reflow", poids: "weight",
-  longueur: "length", largeur: "width", hauteur: "height", logique: "logic", niveau: "level", haut: "high", bas: "low",
-  alimenter: "supply power", tensions: "voltage", courants: "current", temperatures: "temperature",
-};
+function scoreDocChunks(terms, docId, limit) {
+  if (!state.idx || !state.idx.N) return [];
+  const { docs, df, N, avgLen } = state.idx;
+  const k1 = 1.4, b = 0.75;
+  const scored = [];
+  for (const item of docs) {
+    if (item.chunk.docId !== docId) continue;
+    let s = 0;
+    for (const term of terms) {
+      const f = item.tf.get(term) || 0;
+      if (!f) continue;
+      const n = df.get(term) || 0;
+      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
+      const norm = f * (k1 + 1) / (f + k1 * (1 - b + b * (item.len / (avgLen || 1))));
+      s += idf * norm;
+    }
+    if (s > 0) scored.push({ chunk: item.chunk, score: s });
+  }
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit).map((x) => x.chunk);
+}
 
-const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-function tokenize(s, expand = false) {
-  const base = norm(s).split(/[^a-z0-9.+\-_#]+/).map((t) => t.replace(/^[.\-_+]+|[.\-_+]+$/g, "")).filter((t) => t.length > 1 && !STOP.has(t));
+function retrieveChunks(question, selectedDocs, isCompare) {
+  const terms = expandQuery(question);
+  if (!terms.length) {
+    return selectedDocs.flatMap((d) => state.chunks.filter((c) => c.docId === d.id).slice(0, 3));
+  }
+  if (isCompare && selectedDocs.length >= 2) {
+    const perDoc = Math.max(3, Math.min(6, Math.ceil(10 / selectedDocs.length)));
+    const picked = [];
+    const seen = new Set();
+    for (const d of selectedDocs) {
+      for (const ch of scoreDocChunks(terms, d.id, perDoc)) {
+        if (!seen.has(ch.id)) { seen.add(ch.id); picked.push(ch); }
+      }
+    }
+    return picked;
+  }
+  const all = [];
+  for (const d of selectedDocs) {
+    all.push(...scoreDocChunks(terms, d.id, 6));
+  }
+  all.sort((a, b) => (b.score || 0) - (a.score || 0));
+  const seen = new Set();
   const out = [];
-  for (const t of base) {
-    out.push(t);
-    if (t.includes("-") || t.includes("_")) t.split(/[-_]/).forEach((p) => p.length > 1 && out.push(p));
-    if (expand && FR_EN[t]) FR_EN[t].split(" ").filter(Boolean).forEach((e) => out.push(e));
+  for (const ch of all) {
+    if (!seen.has(ch.id)) { seen.add(ch.id); out.push(ch); }
+    if (out.length >= 8) break;
   }
   return out;
 }
 
-function buildIndex() {
-  const df = new Map();
-  let total = 0;
-  for (const c of state.chunks) {
-    const toks = tokenize(c.heading + " " + (c.ctx || c.text));
-    const tf = new Map();
-    for (const t of toks) tf.set(t, (tf.get(t) || 0) + 1);
-    c.tf = tf; c.len = toks.length; total += toks.length;
-    for (const t of tf.keys()) df.set(t, (df.get(t) || 0) + 1);
-  }
-  state.idx = { df, N: state.chunks.length, avgdl: total / Math.max(state.chunks.length, 1) };
+/* ---------- LLM : Ollama & WebLLM ---------- */
+const ollamaBaseUrl = () => ($("oUrl").value || "http://127.0.0.1:11434").trim().replace(/\/+$/, "");
+
+async function checkOllama() {
+  const base = ollamaBaseUrl();
+  const res = await fetch(`${base}/api/tags`, { signal: AbortSignal.timeout(6000) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const data = await res.json();
+  const models = (data.models || []).map((m) => m.name);
+  const chosen = ($("oModel").value || "").trim();
+  const found = models.some((m) => m === chosen || m.startsWith(`${chosen}:`));
+  return { ok: true, models, found, chosen };
 }
 
-function bm25(query, pool) {
-  const { df, N, avgdl } = state.idx;
-  const qt = [...new Set(tokenize(query, true))];
-  const k1 = 1.4, b = 0.75;
-  return pool.map((c) => {
-    let s = 0;
-    for (const t of qt) {
-      const f = c.tf.get(t);
-      if (!f) continue;
-      const n = df.get(t) || 0;
-      const idf = Math.log(1 + (N - n + 0.5) / (n + 0.5));
-      s += idf * ((f * (k1 + 1)) / (f + k1 * (1 - b + (b * c.len) / avgdl)));
-    }
-    return { c, s };
-  }).filter((r) => r.s > 0).sort((a, b) => b.s - a.s);
-}
-
-function retrieve(query, { docIds, k, balanced, includeFirstPage }) {
-  const pool = state.chunks.filter((c) => docIds.includes(c.docId));
-  if (!pool.length) return [];
-  let picked = [];
-  if (balanced && docIds.length > 1) {
-    const per = Math.max(2, Math.ceil(k / docIds.length));
-    for (const id of docIds) {
-      picked.push(...bm25(query, pool.filter((c) => c.docId === id)).slice(0, per).map((r) => r.c));
-    }
-  } else {
-    picked = bm25(query, pool).slice(0, k).map((r) => r.c);
-  }
-  if (includeFirstPage) {
-    const first = pool.filter((c) => c.page === 1).slice(0, 2);
-    picked = [...first, ...picked.filter((c) => !first.includes(c))].slice(0, k);
-  }
-  if (!picked.length) picked = pool.slice(0, Math.min(3, pool.length)); // aucune correspondance : début du document
-  return picked;
-}
-
-/* ============================================================
-   3. MOTEURS LLM
-   ============================================================ */
-async function streamOllama(messages, onToken, signal) {
-  if (!state.ollamaBase) {
-    const found = await findOllama();
-    if (!found) throw new Error(diagnose());
-  }
-  const res = await fetch(state.ollamaBase + "/api/chat", {
-    method: "POST", signal,
+async function callOllamaStream(messages, onToken, signal) {
+  const base = ollamaBaseUrl();
+  const model = ($("oModel").value || "qwen2.5:3b").trim();
+  const res = await fetch(`${base}/api/chat`, {
+    method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ model: $("oModel").value.trim(), messages, stream: true, keep_alive: "30m", options: { temperature: 0.1, num_ctx: 8192 } }),
+    body: JSON.stringify({ model, messages, stream: true, options: { temperature: 0.1 } }),
+    signal,
   });
-  if (!res.ok) throw new Error("Ollama a répondu " + res.status + " : " + (await res.text()).slice(0, 200));
+  if (!res.ok) {
+    const txt = await res.text().catch(() => "");
+    throw new Error(`Ollama (${res.status}) : ${txt || "erreur de génération"}`);
+  }
   const reader = res.body.getReader();
   const dec = new TextDecoder();
+  let full = "";
   let buf = "";
-  for (;;) {
+  while (true) {
     const { value, done } = await reader.read();
     if (done) break;
     buf += dec.decode(value, { stream: true });
-    let nl;
-    while ((nl = buf.indexOf("\n")) >= 0) {
-      const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
-      if (!line) continue;
-      const j = JSON.parse(line);
-      if (j.error) throw new Error(j.error);
-      if (j.message?.content) onToken(j.message.content);
-    }
-  }
-}
-
-async function loadWebLLM() {
-  if (!navigator.gpu) { setStatus("wStatus", "WebGPU indisponible. Utilise Chrome/Edge récent ou passe sur Ollama.", "bad"); return; }
-  const modelId = $("wModel").value;
-  store.set("wModel", modelId);
-  $("wLoad").disabled = true;
-  setStatus("wStatus", "Chargement de la bibliothèque…");
-  try {
-    const webllm = await import("https://esm.run/@mlc-ai/web-llm");
-    state.web = await webllm.CreateMLCEngine(modelId, {
-      initProgressCallback: (p) => setStatus("wStatus", (p.text || "Téléchargement…").slice(0, 120)),
-    });
-    state.webModel = modelId;
-    setStatus("wStatus", "Modèle prêt : " + modelId, "ok");
-  } catch (e) {
-    console.error(e);
-    setStatus("wStatus", "Échec du chargement : " + (e.message || e), "bad");
-  }
-  $("wLoad").disabled = false;
-  updateBadge();
-}
-
-async function streamWeb(messages, onToken) {
-  if (!state.web) throw new Error("Charge d'abord un modèle dans « Moteur IA » (bouton Charger le modèle).");
-  const stream = await state.web.chat.completions.create({ messages, stream: true, temperature: 0.1, max_tokens: 1024 });
-  for await (const chunk of stream) {
-    const t = chunk.choices[0]?.delta?.content;
-    if (t) onToken(t);
-    if (state.abort?.aborted) { state.web.interruptGenerate(); break; }
-  }
-}
-
-/* ============================================================
-   4. CHAT
-   ============================================================ */
-function selectedIds() { return state.docs.filter((d) => d.selected && d.chunks).map((d) => d.id); }
-
-async function ask(question, opts = {}) {
-  if (state.busy || !question.trim()) return;
-  const ids = opts.onlyDoc ? [opts.onlyDoc] : selectedIds();
-  const general = !ids.length; // aucun document : l'IA répond avec ses connaissances générales
-  if (!state.conv) beginConv();
-
-  state.busy = true; updateSend();
-  const compare = $("compare").checked && !opts.onlyDoc && ids.length > 1;
-  const isFollowUp = question.split(/\s+/).length < 6 && state.history.length;
-  const lastUser = [...state.history].reverse().find((m) => m.role === "user")?.display || "";
-  const query = (isFollowUp ? lastUser + " " : "") + question + (opts.extraQuery ? " " + opts.extraQuery : "");
-  const k = state.engine === "web" ? 4 : 6;
-  const budget = state.engine === "web" ? 4200 : 7000;
-  const { kept, keys, qt, texts } = general
-    ? { kept: [], keys: [], qt: [], texts: [] }
-    : gatherContext(query, ids, { k, budget, multi: compare || ids.length > 1, summary: !!opts.onlyDoc });
-  const hits = kept.map((c) => ({ docId: c.docId, file: c.file, page: c.page, heading: c.heading, text: c.text, qt }));
-
-  const context = kept.map((c, i) => `[${i + 1}] (${c.file}, page ${c.page}${c.heading ? ", section « " + c.heading + " »" : ""})\n${texts[i]}`).join("\n\n---\n\n");
-  const keyBlock = keys.length && !compare
-    ? "LIGNES CLÉS (les plus proches de la question) :\n" + keys.map((k) => `- [${k.i + 1}] p.${k.page}${k.section ? " · " + k.section : ""}${k.header ? " · colonnes : " + k.header : ""} → ${k.line.replace(/\n/g, " ⏎ ")}`).join("\n") + "\n\n"
-    : "";
-  const userMsg = general ? question : `${keyBlock}CONTEXTE :\n${context}\n\nQUESTION : ${question}`;
-  const messages = [
-    { role: "system", content: general ? GENERAL_PROMPT : SYSTEM_PROMPT + (compare ? COMPARE_PROMPT : "") },
-    ...state.history.slice(-4).map((m) => ({ role: m.role, content: m.content.slice(0, 700) })),
-    { role: "user", content: userMsg },
-  ];
-
-  addMessage("user", esc(opts.label || question));
-  const aiEl = addMessage("ai", '<span class="dots"><span></span><span></span><span></span></span>');
-  const bodyEl = aiEl.querySelector(".body");
-  let acc = "", raf = 0;
-  const render = () => { raf = 0; bodyEl.innerHTML = renderMd(acc, hits); scrollChat(); };
-
-  state.abort = { aborted: false, ctrl: new AbortController() };
-  let failed = false;
-  try {
-    const onToken = (t) => { acc += t; if (!raf) raf = requestAnimationFrame(render); };
-    if (state.engine === "ollama") await streamOllama(messages, onToken, state.abort.ctrl.signal);
-    else await streamWeb(messages, onToken);
-  } catch (e) {
-    if (e.name !== "AbortError") {
-      const hint = state.engine === "ollama" && !String(e.message).includes("Ollama")
-        ? "\n\nVérifie qu'Ollama tourne et que le modèle est bien téléchargé."
-        : "";
-      acc += (acc ? "\n\n" : "") + "**Erreur :** " + (e.message || e) + hint;
-      failed = true;
-    }
-  }
-  if (raf) cancelAnimationFrame(raf);
-  // Le petit modèle répond « introuvable » alors que la ligne est dans les extraits : on affiche les lignes trouvées
-  if (!failed && keys.some((x) => x.n >= 2) && /je ne trouve pas cette information/i.test(acc)) acc = fallbackText(keys);
-  acc = dedupeTables(acc);
-  bodyEl.innerHTML = renderMd(acc || "_(réponse vide)_", hits);
-  attachSources(aiEl, hits, keys);
-  if (!failed && acc.trim()) {
-    state.history.push({ role: "user", content: question, display: question });
-    state.history.push({ role: "assistant", content: acc });
-    state.conv.log.push({ role: "user", text: opts.label || question }, { role: "ai", text: acc, hits, keys });
-    if (state.conv.log.length <= 2) state.conv.title = (opts.label || question).slice(0, 48);
-    await saveConv();
-  }
-  state.busy = false; state.abort = null; updateSend(); scrollChat();
-}
-
-/* ============================================================
-   RECHERCHE DES LIGNES CLÉS (indépendante du modèle)
-   ============================================================ */
-
-/* Chaque mot de la question devient un « concept » : le mot + ses équivalents anglais,
-   gardés seulement s'ils existent dans les documents (ex. tension → voltage). */
-function queryConcepts(query) {
-  if (!state.idx || !state.idx.N) return [];
-  const { df, N } = state.idx;
-  const idf = (t) => Math.log(1 + (N - (df.get(t) || 0) + 0.5) / ((df.get(t) || 0) + 0.5));
-  const seen = new Set(), out = [];
-  const toks = tokenize(query);
-  const parts = new Set(toks.filter((t) => /[-_]/.test(t)).flatMap((t) => t.split(/[-_]/)));   // « to-92 » masque « 92 »
-  for (const t of toks) {
-    if (seen.has(t) || parts.has(t)) continue;
-    seen.add(t);
-    const words = [t, ...(FR_EN[t] ? FR_EN[t].split(" ").filter(Boolean) : [])]
-      .filter((w) => { const n = df.get(w) || 0; return n > 0 && n / N < 0.6; });
-    if (words.length) out.push({ words, w: Math.max(...words.map(idf)) });
-  }
-  return out;
-}
-
-const hasValue = (t) => /\d/.test(t.replace(/\(\d+\)/g, ""));   // un vrai chiffre (pas un renvoi de note « (1) »)
-
-/* Score d'une ligne : concepts trouvés dans la ligne (poids plein) ou dans sa section (demi-poids) */
-function scoreRow(row, concepts) {
-  let score = 0, n = 0, inLine = 0;
-  const st = secToks(row.section);
-  for (const c of concepts) {
-    if (c.words.some((w) => row.toks.has(w))) { score += c.w; n += 1; inLine++; }
-    else if (c.words.some((w) => st.has(w))) { score += c.w * 0.5; n += 0.5; }
-  }
-  if (!inLine) return null;
-  if (hasValue(row.text)) score *= 1.4;           // les lignes de valeurs d'abord
-  if (row.text.includes("|")) score *= 1.2;       // lignes de tableau
-  score /= 1 + row.text.length / 160;             // les lignes courtes et précises d'abord
-  return { score, n };
-}
-
-function topLines(concepts, pool, max) {
-  const found = [];
-  for (const c of pool) {
-    c.rows.forEach((row, ri) => {
-      if (row.kind !== "data" || row.text.length < 6 || row.text.length > 220) return;
-      const r = scoreRow(row, concepts);
-      if (r) found.push({ chunk: c, ri, row, score: r.score, n: r.n });
-    });
-  }
-  found.sort((a, b) => b.score - a.score);
-  const out = [], seen = new Set();
-  for (const f of found) {
-    const key = f.chunk.docId + "|" + f.chunk.page + "|" + f.row.text;
-    if (seen.has(key)) continue;
-    seen.add(key); out.push(f);
-    if (out.length >= max) break;
-  }
-  return out;
-}
-
-/* Une ligne sans chiffre (ex. « Quiescent current ») est suivie de ses lignes de valeurs */
-function lineText(f) {
-  let t = f.row.text;
-  if (!hasValue(t)) {
-    const extra = f.chunk.rows.slice(f.ri + 1, f.ri + 3)
-      .filter((r) => r.kind === "data" && (hasValue(r.text) || r.text.includes("|"))).map((r) => r.text);
-    if (extra.length) t += "\n" + extra.join("\n");
-  }
-  return t;
-}
-
-/* Deux extraits voisins partagent 2 lignes (chevauchement de découpage) : si les deux sont envoyés,
-   on retire ces lignes du second, sinon l'IA les voit en double et les répète dans ses tableaux. */
-function dedupeOverlaps(kept) {
-  const keptSet = new Set(kept);
-  return kept.map((c) => {
-    const prev = state.chunks[c.id - 1];
-    let lines = c.ctx.split("\n");
-    if (prev && prev.docId === c.docId && prev.page === c.page && keptSet.has(prev)) {
-      const before = prev.text.split("\n"), after = c.text.split("\n");
-      for (let n = Math.min(2, before.length, after.length); n >= 1; n--) {
-        if (before.slice(-n).every((l, i) => l.trim() === after[i].trim())) {
-          for (let i = 0; i < n; i++) {
-            const idx = lines.findIndex((l) => l.trim() === after[i].trim());
-            if (idx >= 0 && idx < 4) lines.splice(idx, 1);
-          }
-          break;
-        }
-      }
-    }
-    return lines.join("\n");
-  });
-}
-
-/* Choisit les extraits envoyés à l'IA (lignes clés d'abord, puis BM25) dans un budget de texte */
-function gatherContext(query, ids, { k, budget, multi, summary }) {
-  const pool = state.chunks.filter((c) => ids.includes(c.docId));
-  const concepts = queryConcepts(query);
-  let good = [];
-  if (concepts.length && !summary) {
-    let found = [];
-    if (ids.length > 1) ids.forEach((id) => found.push(...topLines(concepts, pool.filter((c) => c.docId === id), 3)));
-    else found = topLines(concepts, pool, 6);
-    found.sort((a, b) => b.score - a.score);
-    const single = concepts.length === 1;
-    const minN = single ? 1 : Math.min(2, concepts.length) - 0.5;
-    if (!(single && concepts[0].w < 2.5)) good = found.filter((f) => f.n >= minN).slice(0, ids.length > 1 ? 6 : 4);
-  }
-  const bm = retrieve(query, { docIds: ids, k, balanced: multi, includeFirstPage: summary });
-  const raw = [];
-  for (const c of [...good.map((f) => f.chunk), ...bm]) if (!raw.includes(c)) raw.push(c);
-  const kept = [];
-  let used = 0;
-  for (const c of raw.slice(0, k)) {
-    const n = c.ctx.length + 120;
-    if (kept.length && used + n > budget) continue;   // évite de dépasser la fenêtre du modèle
-    kept.push(c); used += n;
-  }
-  const keys = good
-    .map((f) => ({ i: kept.indexOf(f.chunk), page: f.chunk.page, file: f.chunk.file, section: f.row.section, header: f.row.header, line: lineText(f), n: f.n }))
-    .filter((x) => x.i >= 0);
-  const qt = concepts.length ? [...new Set(concepts.flatMap((c) => c.words))] : [...new Set(tokenize(query, true))];
-  return { kept, keys, qt, texts: dedupeOverlaps(kept) };
-}
-
-/* Supprime les lignes de tableau Markdown strictement identiques dans une même table */
-function dedupeTables(md) {
-  const out = [];
-  let seen = new Set();
-  for (const line of md.split("\n")) {
-    if (!line.trim().startsWith("|")) { seen = new Set(); out.push(line); continue; }
-    const key = line.replace(/\s+/g, " ").trim().toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key); out.push(line);
-  }
-  return out.join("\n");
-}
-
-function fallbackText(keys) {
-  return "Le modèle n'a pas su rédiger la réponse, mais ces lignes de tes documents correspondent à ta question :\n\n" +
-    keys.map((k) => "- **p." + k.page + "**" + (k.section ? " · " + k.section : "") + (k.header ? " (colonnes : " + k.header + ")" : "") + " : `" + k.line.replace(/\n/g, " ⏎ ") + "` [" + (k.i + 1) + "]").join("\n") +
-    "\n\nSi ça arrive souvent, essaie un modèle plus grand, par exemple `qwen2.5:7b`.";
-}
-
-function renderMd(text, hits) {
-  let html = DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }));
-  html = html.replace(/\[(\d{1,2})\]/g, (m, n) => {
-    const h = hits[+n - 1];
-    return h ? `<button class="cite" type="button" data-i="${n}" title="${esc(h.file)} – p. ${h.page}">[${n}]</button>` : m;
-  });
-  return html;
-}
-
-function attachSources(aiEl, hits, keys = []) {
-  const groups = new Map(), wrap = document.createElement("div");
-  wrap.className = "sources";
-  hits.forEach((h) => {
-    const key = h.docId + ":" + h.page;
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push(h);
-  });
-  groups.forEach((g) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "src";
-    b.textContent = `${g[0].file} · p.${g[0].page}`;
-    b.addEventListener("click", () => openViewer(g[0].docId, g[0].page, g));
-    wrap.appendChild(b);
-  });
-  const body = aiEl.querySelector(".body");
-  if (keys.length) {
-    const box = document.createElement("div");
-    box.className = "keys";
-    const t = document.createElement("div");
-    t.className = "kt";
-    t.textContent = "Lignes les plus proches dans tes documents";
-    box.appendChild(t);
-    keys.forEach((k) => {
-      const h = hits[k.i];
-      if (!h) return;
-      const b = document.createElement("button");
-      b.type = "button"; b.className = "key";
-      b.title = (k.section ? k.section + " · " : "") + (k.header ? "colonnes : " + k.header : "");
-      const p = document.createElement("span"); p.className = "kp"; p.textContent = "p." + k.page;
-      const l = document.createElement("span"); l.className = "kl"; l.textContent = k.line;
-      b.append(p, l);
-      b.addEventListener("click", () => openViewer(h.docId, h.page, [h]));
-      box.appendChild(b);
-    });
-    body.appendChild(box);
-  }
-  if (wrap.children.length) body.appendChild(wrap);
-  if (hits.length) {
-    const det = document.createElement("details");
-    det.className = "ctx";
-    const sum = document.createElement("summary");
-    sum.textContent = `Voir les ${hits.length} extraits envoyés à l'IA`;
-    det.appendChild(sum);
-    hits.forEach((h, i) => {
-      const p = document.createElement("pre");
-      p.textContent = `[${i + 1}] ${h.file} · page ${h.page}${h.heading ? " · " + h.heading : ""}\n${h.text}`;
-      det.appendChild(p);
-    });
-    body.appendChild(det);
-  }
-  body.addEventListener("click", (e) => {
-    const c = e.target.closest(".cite");
-    if (!c) return;
-    const h = hits[+c.dataset.i - 1];
-    if (h) openViewer(h.docId, h.page, [h]);
-  });
-}
-
-function addMessage(role, html) {
-  $("chat").querySelector(".empty")?.remove();
-  const el = document.createElement("div");
-  el.className = "msg " + role;
-  el.innerHTML = `<div class="who">${role === "user" ? "Toi" : "DatasheetAI"}</div><div class="body">${html}</div>`;
-  $("chat").appendChild(el);
-  scrollChat();
-  return el;
-}
-const scrollChat = () => { $("chat").scrollTop = $("chat").scrollHeight; };
-
-function renderEmpty() {
-  $("chat").innerHTML = `<div class="empty">
-    <h2>Quelle est la tension max de ton composant ?</h2>
-    <p>Pose ta question directement : sans document, l'IA répond avec ses connaissances générales. Dépose une ou plusieurs datasheets à gauche pour obtenir des réponses tirées de tes PDF, avec la page citée.</p>
-    <div class="sugg">
-      <button type="button">Quelle est la tension d'alimentation maximale absolue ?</button>
-      <button type="button">Donne-moi le brochage et la fonction de chaque broche.</button>
-      <button type="button">Quel est le courant de sortie typique et dans quelles conditions ?</button>
-      <button type="button">Compare ces composants (tension, courant, boîtier, température).</button>
-    </div></div>`;
-  $("chat").querySelectorAll(".sugg button").forEach((b) => b.addEventListener("click", () => {
-    if (b.textContent.startsWith("Compare")) $("compare").checked = true;
-    $("q").value = b.textContent; send();
-  }));
-}
-
-/* ============================================================
-   5. CONVERSATIONS SAUVEGARDÉES
-   ============================================================ */
-function beginConv() {
-  state.conv = { id: uid(), title: "Nouvelle conversation", updated: Date.now(), log: [], history: [] };
-  state.history = state.conv.history;
-}
-async function saveConv() {
-  const c = state.conv;
-  if (!c) return;
-  c.updated = Date.now();
-  if (!state.convs.includes(c)) state.convs.push(c);
-  store.set("lastConv", c.id);
-  await idb.put("chats", c);
-  renderConvs();
-}
-function startConv() {
-  if (state.busy) return;
-  state.conv = null; state.history = [];
-  store.set("lastConv", "");
-  renderEmpty(); renderConvs();
-}
-function openConv(id) {
-  if (state.busy) return;
-  const c = state.convs.find((x) => x.id === id);
-  if (!c) return;
-  state.conv = c; state.history = c.history;
-  store.set("lastConv", c.id);
-  $("chat").innerHTML = "";
-  if (!c.log.length) renderEmpty();
-  for (const e of c.log) {
-    if (e.role === "user") addMessage("user", esc(e.text));
-    else { const el = addMessage("ai", renderMd(e.text, e.hits || [])); attachSources(el, e.hits || [], e.keys || []); }
-  }
-  scrollChat();
-  renderConvs();
-}
-async function deleteConv(id) {
-  if (state.busy) return;
-  state.convs = state.convs.filter((x) => x.id !== id);
-  await idb.del("chats", id);
-  if (state.conv?.id === id) startConv(); else renderConvs();
-}
-function renderConvs() {
-  const ul = $("convs");
-  ul.innerHTML = "";
-  const list = [...state.convs].sort((a, b) => b.updated - a.updated);
-  if (!list.length) { ul.innerHTML = '<li class="hint">Aucune conversation sauvegardée.</li>'; return; }
-  for (const c of list) {
-    const li = document.createElement("li");
-    li.className = "conv" + (state.conv?.id === c.id ? " active" : "");
-    li.innerHTML = `<button class="t" type="button" title="${esc(c.title)}">${esc(c.title)}</button><button class="x" type="button" aria-label="Supprimer cette conversation">✕</button>`;
-    li.querySelector(".t").addEventListener("click", () => { openConv(c.id); closeSide(); });
-    li.querySelector(".x").addEventListener("click", () => deleteConv(c.id));
-    ul.appendChild(li);
-  }
-}
-
-/* ============================================================
-   6. VISIONNEUSE (PDF / images) + SURLIGNAGE DE LA SOURCE
-   ============================================================ */
-const viewer = { docId: null, page: 1, token: 0, hl: [] };
-
-async function openViewer(docId, page, hl = []) {
-  const doc = state.docs.find((d) => d.id === docId);
-  if (!doc) { toast("Ce document n'est plus dans la bibliothèque."); return; }
-  if (doc.kind !== "pdf" && doc.kind !== "image") { toast("Ce document est du texte brut : pas d'aperçu."); return; }
-  viewer.docId = docId; viewer.hl = hl;
-  viewer.page = Math.min(Math.max(page, 1), doc.pages || 1);
-  $("app").classList.add("viewer-open");
-  await drawPage();
-}
-
-/* Retrouve les lignes de la page qui forment un extrait (même découpage qu'à l'indexation) */
-function findRange(pageLines, chunkText) {
-  const cl = chunkText.split("\n");
-  const n = cl.length;
-  for (let i = 0; i + n <= pageLines.length; i++) {
-    let ok = true;
-    for (let j = 0; j < n; j++) if (pageLines[i + j] !== cl[j]) { ok = false; break; }
-    if (ok) return [i, n];
-  }
-  const i = pageLines.indexOf(cl[0]);
-  return i >= 0 ? [i, Math.min(n, pageLines.length - i)] : null;
-}
-
-function rowBox(row, vp) {
-  if (!row) return null;
-  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
-  for (const c of row.cells) {
-    const t = pdfjsLib.Util.transform(vp.transform, c.it.transform);
-    const fh = Math.hypot(t[2], t[3]);
-    x0 = Math.min(x0, t[4]); x1 = Math.max(x1, t[4] + c.it.width * vp.scale);
-    y0 = Math.min(y0, t[5] - fh); y1 = Math.max(y1, t[5] + fh * 0.25);
-  }
-  return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
-}
-const scaleBox = (l, f) => ({ x: l.x0 * f, y: l.y0 * f, w: (l.x1 - l.x0) * f, h: (l.y1 - l.y0) * f });
-
-async function drawPage() {
-  const doc = state.docs.find((d) => d.id === viewer.docId);
-  if (!doc) return;
-  const my = ++viewer.token;
-  $("vtitle").textContent = doc.name;
-  $("vpage").textContent = `${viewer.page} / ${doc.pages}`;
-  const wrap = $("vbody"), cv = $("vcanvas"), ctx = cv.getContext("2d");
-  const dpr = window.devicePixelRatio || 1;
-  const cssW = Math.max(wrap.clientWidth - 24, 200);
-  const hl = viewer.hl.filter((h) => h.docId === doc.id && h.page === viewer.page);
-  const ocrPage = doc.ocr?.[viewer.page];
-  let pageLines = null, rectOf = null;
-
-  try {
-    if (doc.kind === "image") {
-      doc.bitmap = doc.bitmap || (await createImageBitmap(doc.blob));
-      if (my !== viewer.token) return;
-      const wpx = Math.round(cssW * dpr), hpx = Math.round((wpx * doc.bitmap.height) / doc.bitmap.width);
-      cv.width = wpx; cv.height = hpx;
-      cv.style.width = wpx / dpr + "px"; cv.style.height = hpx / dpr + "px";
-      ctx.drawImage(doc.bitmap, 0, 0, wpx, hpx);
-      if (ocrPage) { const f = wpx / ocrPage.w; pageLines = ocrPage.lines.map((l) => l.t); rectOf = (i) => scaleBox(ocrPage.lines[i], f); }
-    } else {
-      const pdf = await getPdf(doc);
-      const page = await pdf.getPage(viewer.page);
-      if (my !== viewer.token) return;
-      const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: (cssW / base.width) * dpr });
-      cv.width = vp.width; cv.height = vp.height;
-      cv.style.width = vp.width / dpr + "px"; cv.style.height = vp.height / dpr + "px";
-      await page.render({ canvasContext: ctx, viewport: vp }).promise;
-      if (my !== viewer.token) return;
-      if (hl.length) {
-        if (ocrPage) {
-          const f = vp.width / ocrPage.w;
-          pageLines = ocrPage.lines.map((l) => l.t); rectOf = (i) => scaleBox(ocrPage.lines[i], f);
-        } else {
-          const rows = buildRows((await page.getTextContent()).items);
-          pageLines = rows.map((r) => r.text); rectOf = (i) => rowBox(rows[i], vp);
-        }
-      }
-    }
-  } catch (e) {
-    if (my === viewer.token) console.warn("Affichage de la page :", e);
-    return;
-  }
-
-  /* Surlignage : jaune clair = extrait utilisé, jaune foncé = lignes liées à la question */
-  let first = null, shown = 0;
-  if (pageLines && rectOf) {
-    const strong = new Map();
-    for (const h of hl) {
-      const r = findRange(pageLines, h.text);
-      if (!r) continue;
-      const qt = new Set(h.qt || []);
-      let any = false;
-      for (let i = r[0]; i < r[0] + r[1]; i++) {
-        const hit = tokenize(pageLines[i]).some((t) => qt.has(t));
-        any = any || hit;
-        strong.set(i, strong.get(i) || hit);
-      }
-      if (!any) for (let i = r[0]; i < r[0] + r[1]; i++) strong.set(i, true);
-    }
-    ctx.save();
-    ctx.globalCompositeOperation = "multiply";
-    for (const [i, isStrong] of strong) {
-      const b = rectOf(i);
-      if (!b) continue;
-      ctx.fillStyle = isStrong ? "rgba(255,210,0,.6)" : "rgba(255,210,0,.2)";
-      ctx.fillRect(b.x - 3, b.y - 1, b.w + 6, b.h + 2);
-      if (isStrong && (first === null || b.y < first)) first = b.y;
-      shown++;
-    }
-    ctx.restore();
-  }
-  wrap.scrollTop = first !== null ? Math.max(0, first / dpr - 100) : 0;
-
-  const note = [];
-  if (shown) note.push("Passage surligné : le jaune foncé marque les lignes liées à ta question");
-  else if (hl.length) note.push("Passage introuvable sur cette page (mise en page différente)");
-  if (ocrPage) note.push("texte reconnu par OCR");
-  $("vnote").textContent = note.join(" · ");
-  $("vnote").style.display = note.length ? "block" : "none";
-}
-
-/* ============================================================
-   7. INTERFACE
-   ============================================================ */
-function renderDocs() {
-  const ul = $("docs");
-  ul.innerHTML = "";
-  state.docs.forEach((d) => {
-    const li = document.createElement("li");
-    li.className = "doc";
-    const canView = d.kind === "pdf" || d.kind === "image";
-    li.innerHTML = `
-      <div class="row">
-        <input type="checkbox" ${d.selected ? "checked" : ""} aria-label="Utiliser ${esc(d.name)}">
-        <button class="name" type="button" title="${esc(d.name)}">${esc(d.name)}</button>
-      </div>
-      <div class="meta" style="${d.warn ? "color:var(--bad)" : ""}">${esc(d.status)}${d.chunks ? ` · ${d.pages} p. · ${d.chunks} extraits` : ""}${d.saveFail ? " · non sauvegardé (espace insuffisant ?)" : ""}</div>
-      ${d.progress < 1 ? `<div class="bar"><i style="width:${Math.round(d.progress * 100)}%"></i></div>` : ""}
-      <div class="acts">
-        <button class="mini" data-a="sum" type="button" ${d.chunks ? "" : "disabled"}>Fiche résumé</button>
-        <button class="mini" data-a="rm" type="button">Retirer</button>
-      </div>`;
-    li.querySelector("input").addEventListener("change", (e) => { d.selected = e.target.checked; saveSelection(); updateScope(); });
-    li.querySelector(".name").addEventListener("click", () => { if (canView) openViewer(d.id, 1); });
-    li.querySelector('[data-a="sum"]').addEventListener("click", () => {
-      closeSide();
-      ask(SUMMARY_QUESTION, { onlyDoc: d.id, label: "Fiche résumé : " + d.name, extraQuery: "description features applications package pin configuration supply voltage current temperature" });
-    });
-    li.querySelector('[data-a="rm"]').addEventListener("click", () => removeDoc(d.id));
-    ul.appendChild(li);
-  });
-  updateScope();
-}
-
-function updateScope() {
-  const n = selectedIds().length;
-  $("scope").textContent = state.docs.length
-    ? `${n} document${n > 1 ? "s" : ""} sélectionné${n > 1 ? "s" : ""} sur ${state.docs.length}`
-    : "Mode général : pose ta question, ou ajoute un PDF pour des réponses sourcées";
-  if (state.docs.length && !n) $("scope").textContent = "Aucun document coché : mode général";
-}
-
-function updateBadge() {
-  $("engineBadge").textContent = state.engine === "ollama"
-    ? "Moteur : Ollama · " + $("oModel").value
-    : "Moteur : " + (state.webModel ? state.webModel.replace(/-q4.*/, "") + " (navigateur)" : "navigateur (non chargé)");
-}
-function updateSend() {
-  const b = $("send");
-  b.textContent = state.busy ? "Arrêter" : "Envoyer";
-  b.classList.toggle("ghost", state.busy);
-}
-function setStatus(id, text, cls = "") { const el = $(id); el.textContent = text; el.className = "status " + cls; }
-function toast(msg) { addMessage("ai", esc(msg)); }
-function closeSide() { $("app").classList.remove("side-open"); }
-
-function setEngine(e) {
-  state.engine = e;
-  $("eOllama").setAttribute("aria-pressed", e === "ollama");
-  $("eWeb").setAttribute("aria-pressed", e === "web");
-  $("pOllama").hidden = e !== "ollama";
-  $("pWeb").hidden = e !== "web";
-  store.set("engine", e);
-  updateBadge();
-}
-
-const probe = async (base) => {
-  try {
-    const r = await fetch(base + "/api/tags", { signal: AbortSignal.timeout(4000) });
-    return r.ok ? await r.json() : null;
-  } catch { return null; }
-};
-
-async function findOllama() {
-  const typed = $("oUrl").value.trim().replace(/\/$/, "");
-  const cands = [];
-  // Si la page est servie par serveur.py, le proxy /ollama évite tout blocage du navigateur
-  if (location.protocol.startsWith("http")) cands.push(location.origin + "/ollama");
-  cands.push(typed, "http://127.0.0.1:11434", "http://localhost:11434");
-  for (const base of [...new Set(cands)]) {
-    const json = await probe(base);
-    if (json) { state.ollamaBase = base; return { base, json }; }
-  }
-  state.ollamaBase = null;
-  return null;
-}
-
-function diagnose() {
-  if (location.hostname.endsWith("github.io")) {
-    return "Depuis GitHub Pages, Ollama doit autoriser ce site (une seule fois) : ouvre un terminal et tape  setx OLLAMA_ORIGINS \"https://*.github.io\"  puis quitte et rouvre Ollama (icône près de l'horloge → Quit). Si Chrome demande l'accès au réseau local, clique sur Autoriser. Safari ne fonctionne pas : utilise Chrome, Edge ou Firefox. Sans rien installer, tu peux aussi utiliser le moteur « Navigateur ».";
-  }
-  if (location.protocol === "https:" || location.origin === "null" && location.protocol !== "file:") {
-    return "Cette page est ouverte dans un aperçu ou un site en HTTPS : le navigateur bloque l'accès à ton PC. Télécharge index.html et ouvre-le avec Lancer-DatasheetAI.bat, ou utilise le moteur « Navigateur ».";
-  }
-  return "Ollama ne répond pas sur ce PC. Vérifie que l'icône Ollama est dans la barre des tâches (près de l'horloge), sinon ouvre l'application Ollama ou lance « ollama serve » dans un terminal. Relance ensuite Lancer-DatasheetAI.bat.";
-}
-
-async function testOllama() {
-  store.set("oUrl", $("oUrl").value); store.set("oModel", $("oModel").value);
-  setStatus("oStatus", "Connexion…");
-  const found = await findOllama();
-  if (!found) {
-    setStatus("oStatus", diagnose(), "bad");
-    updateBadge();
-    return;
-  }
-  const names = (found.json.models || []).map((m) => m.name);
-  $("oModels").innerHTML = names.map((n) => `<option value="${esc(n)}">`).join("");
-  const wanted = $("oModel").value.trim();
-  const ok = names.some((n) => n === wanted || n.startsWith(wanted + ":"));
-  if (!names.length) {
-    setStatus("oStatus", "Connecté à Ollama, mais aucun modèle installé. Dans un terminal : ollama pull qwen2.5:3b", "bad");
-  } else if (!ok) {
-    $("oModel").value = names[0]; store.set("oModel", names[0]);
-    setStatus("oStatus", `Connecté. Modèle choisi automatiquement : ${names[0]}`, "ok");
-  } else {
-    setStatus("oStatus", "Connecté. Modèle disponible.", "ok");
-  }
-  updateBadge();
-}
-
-function send() {
-  if (state.busy) { state.abort?.ctrl.abort(); if (state.abort) state.abort.aborted = true; return; }
-  const q = $("q").value.trim();
-  if (!q) return;
-  $("q").value = ""; $("q").style.height = "auto";
-  ask(q);
-}
-
-/* ---------- Événements ---------- */
-$("drop").addEventListener("click", () => $("file").click());
-$("file").addEventListener("change", (e) => { [...e.target.files].forEach(ingestFile); e.target.value = ""; });
-["dragenter", "dragover"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.add("over"); }));
-["dragleave", "drop"].forEach((ev) => document.addEventListener(ev, (e) => { e.preventDefault(); $("drop").classList.remove("over"); }));
-document.addEventListener("drop", (e) => { [...(e.dataTransfer?.files || [])].forEach(ingestFile); });
-
-$("eOllama").addEventListener("click", () => setEngine("ollama"));
-$("eWeb").addEventListener("click", () => setEngine("web"));
-$("oTest").addEventListener("click", testOllama);
-$("oModel").addEventListener("change", () => { store.set("oModel", $("oModel").value); updateBadge(); });
-$("oUrl").addEventListener("change", () => store.set("oUrl", $("oUrl").value));
-$("wLoad").addEventListener("click", loadWebLLM);
-
-$("send").addEventListener("click", send);
-$("q").addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } });
-$("q").addEventListener("input", (e) => { e.target.style.height = "auto"; e.target.style.height = Math.min(e.target.scrollHeight, 160) + "px"; });
-
-$("vclose").addEventListener("click", () => $("app").classList.remove("viewer-open"));
-$("vprev").addEventListener("click", () => { if (viewer.page > 1) { viewer.page--; drawPage(); } });
-$("vnext").addEventListener("click", () => {
-  const d = state.docs.find((x) => x.id === viewer.docId);
-  if (d && viewer.page < d.pages) { viewer.page++; drawPage(); }
-});
-window.addEventListener("resize", () => { if ($("app").classList.contains("viewer-open")) drawPage(); });
-
-$("menu").addEventListener("click", () => $("app").classList.toggle("side-open"));
-$("main").addEventListener("click", (e) => { if (!e.target.closest("#menu")) closeSide(); });
-$("newConv").addEventListener("click", () => { startConv(); closeSide(); });
-$("ocrOn").addEventListener("change", () => store.set("ocrOn", $("ocrOn").checked ? "1" : "0"));
-$("ocrLang").addEventListener("change", () => store.set("ocrLang", $("ocrLang").value));
-$("wipe").addEventListener("click", async () => {
-  if (!confirm("Effacer tous les documents et toutes les conversations sauvegardés dans ce navigateur ?")) return;
-  await idb.clear("docs"); await idb.clear("chats");
-  state.docs = []; state.chunks = []; state.convs = []; state.conv = null; state.history = [];
-  store.set("unsel", "[]"); store.set("lastConv", "");
-  buildIndex();
-  $("app").classList.remove("viewer-open");
-  renderDocs(); renderConvs(); renderEmpty();
-});
-$("theme").addEventListener("click", () => {
-  const cur = document.documentElement.dataset.theme || (matchMedia("(prefers-color-scheme:dark)").matches ? "dark" : "light");
-  const next = cur === "dark" ? "light" : "dark";
-  document.documentElement.dataset.theme = next; store.set("theme", next);
-});
-
-/* ---------- Démarrage ---------- */
-setEngine(store.get("engine", "ollama"));
-renderEmpty();
-renderDocs();
-renderConvs();
-restore();
-if (state.engine === "ollama") testOllama();
-</script>
-</body>
-</html>
+    const lines = buf.split("\n");
+    buf = lines.pop() || "";
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const j = JSON.parse(line);
+        const delta = j.message?.content || "";
